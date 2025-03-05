@@ -16,6 +16,6 @@ npx ts-node scraper.ts "$URL"
 
 # Download the video using yt-dlp
 echo "Downloading video..."
-yt-dlp "$URL" -o "%(title)s.%(ext)s"
+yt-dlp --use-extractors "generic,-Npr" "$URL" -o "%(title)s.%(ext)s"
 
 echo "Done!"
