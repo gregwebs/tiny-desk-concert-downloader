@@ -1,4 +1,4 @@
 // Export the archive_scraper functionality
-pub mod archive_scraper {
-    pub use crate::bin::archive_scraper::*;
+pub fn scrape_archive(year: &str, month: &str, day: Option<&str>) -> anyhow::Result<()> {
+    crate::bin::archive_scraper::scrape_archive(year, month, day)
 }

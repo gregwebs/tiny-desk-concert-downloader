@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use reqwest::blocking::Client;
-use scraper::{Html, Selector, ElementRef, node::Element};
+use scraper::{Html, Selector, ElementRef};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -28,7 +28,7 @@ struct ConcertInfo {
     musicians: Vec<Musician>,
 }
 
-fn scrape_data(url: &str) -> Result<()> {
+pub fn scrape_data(url: &str) -> Result<()> {
     println!("Navigating to {}...", url);
     
     // Create HTTP client
@@ -118,7 +118,6 @@ fn scrape_data(url: &str) -> Result<()> {
         }
         
         // Find SET LIST
-        let ul_selector = Selector::parse("ul").unwrap();
         let li_selector = Selector::parse("li").unwrap();
         
         for (i, p) in paragraphs.iter().enumerate() {
@@ -132,8 +131,8 @@ fn scrape_data(url: &str) -> Result<()> {
                     while let Some(element) = next_element {
                         if let Some(el) = element.value().as_element() {
                             if el.name() == "ul" {
-                                let ul = element;
-                                for (idx, li) in ul.select(&li_selector).enumerate() {
+                                let ul_element = ElementRef::wrap(element).unwrap();
+                                for (idx, li) in ul_element.select(&li_selector).enumerate() {
                                     let song_text = li.inner_html().trim()
                                         .trim_start_matches(|c| c == '"' || c == '\'')
                                         .trim_end_matches(|c| c == '"' || c == '\'')
@@ -153,43 +152,45 @@ fn scrape_data(url: &str) -> Result<()> {
                 }
             }
             
-            if text.contains("MUSICIANS") {
-                // Look for the next UL element
-                if i + 1 < paragraphs.len() {
-                    // Find the next sibling that is a UL element
-                    let mut next_element = p.next_sibling();
-                    while let Some(element) = next_element {
-                        if let Some(el) = element.value().as_element() {
-                            if el.name() == "ul" {
-                                let ul = element;
-                                for li in ul.select(&li_selector) {
-                                    let musician_text = li.inner_html().trim()
-                                        .trim_start_matches(|c| c == '"' || c == '\'')
-                                        .trim_end_matches(|c| c == '"' || c == '\'')
-                                        .to_string();
-                                    
-                                    // Parse musician name and instruments
-                                    let parts: Vec<&str> = musician_text.split(':').collect();
-                                    if parts.len() == 2 {
-                                        let name = parts[0].trim().to_string();
-                                        let instruments = parts[1]
-                                            .split(',')
-                                            .map(|s| s.trim().to_string())
-                                            .collect();
+            // Check for MUSICIANS section
+            for (i, p) in paragraphs.iter().enumerate() {
+                if p.inner_html().contains("MUSICIANS") {
+                    // Look for the next UL element
+                    if i + 1 < paragraphs.len() {
+                        // Find the next sibling that is a UL element
+                        let mut next_element = p.next_sibling();
+                        while let Some(element) = next_element {
+                            if let Some(el) = element.value().as_element() {
+                                if el.name() == "ul" {
+                                    let ul_element = ElementRef::wrap(element).unwrap();
+                                    for li in ul_element.select(&li_selector) {
+                                        let musician_text = li.inner_html().trim()
+                                            .trim_start_matches(|c| c == '"' || c == '\'')
+                                            .trim_end_matches(|c| c == '"' || c == '\'')
+                                            .to_string();
                                         
-                                        musicians.push(Musician { name, instruments });
-                                    } else {
-                                        musicians.push(Musician {
-                                            name: musician_text,
-                                            instruments: Vec::new(),
-                                        });
+                                        // Parse musician name and instruments
+                                        let parts: Vec<&str> = musician_text.split(':').collect();
+                                        if parts.len() == 2 {
+                                            let name = parts[0].trim().to_string();
+                                            let instruments = parts[1]
+                                                .split(',')
+                                                .map(|s| s.trim().to_string())
+                                                .collect();
+                                            
+                                            musicians.push(Musician { name, instruments });
+                                        } else {
+                                            musicians.push(Musician {
+                                                name: musician_text,
+                                                instruments: Vec::new(),
+                                            });
+                                        }
                                     }
+                                    break;
                                 }
-                                break;
                             }
+                            next_element = element.next_sibling();
                         }
-                        next_element = element.next_sibling();
-                    }
                     }
                 }
             }

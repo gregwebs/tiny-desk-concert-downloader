@@ -26,7 +26,7 @@ fn get_last_day_of_month(year: i32, month: u32) -> u32 {
     last_day.day()
 }
 
-fn scrape_archive(year: &str, month: &str, day: Option<&str>) -> Result<()> {
+pub fn scrape_archive(year: &str, month: &str, day: Option<&str>) -> Result<()> {
     // Parse year and month
     let year_num = year.parse::<i32>().context("Invalid year format")?;
     let month_num = month.parse::<u32>().context("Invalid month format")?;
@@ -198,7 +198,7 @@ fn main() -> Result<()> {
         }
     }
     
-    scrape_archive(year, month, day.as_deref())?;
+    scrape_archive(year, month, day.map(|x| x.as_str()))?;
     
     Ok(())
 }

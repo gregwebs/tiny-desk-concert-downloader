@@ -1,4 +1,4 @@
 // Export the scraper functionality
-pub mod scraper {
-    pub use crate::bin::scraper::*;
+pub fn scrape_data(url: &str) -> anyhow::Result<()> {
+    crate::bin::scraper::scrape_data(url)
 }
