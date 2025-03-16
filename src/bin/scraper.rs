@@ -12,7 +12,6 @@ struct Musician {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Song {
-    songNumber: usize,
     title: String,
 }
 
@@ -44,16 +43,20 @@ pub fn scrape_data(url: &str) -> Result<()> {
     
     // Extract the artist name from the title
     let title_selector = Selector::parse("title").unwrap();
-    let title = document.select(&title_selector)
+    let title: String = document.select(&title_selector)
         .next()
-        .map(|element| element.inner_html())
-        .unwrap_or_default();
+        .map(|element| element.text().collect())
+        .unwrap();
     
     let artist_name = title.split(':')
         .next()
         .unwrap_or("")
         .trim()
         .to_string();
+
+    if artist_name.len() == 0 {
+        panic!("title is empty")
+    }
     
     println!("Artist: {}", artist_name);
     
@@ -61,12 +64,12 @@ pub fn scrape_data(url: &str) -> Result<()> {
     let story_title_selector = Selector::parse(".storytitle h1").unwrap();
     let story_title = document.select(&story_title_selector)
         .next()
-        .map(|element| element.inner_html().trim().to_string());
+        .map(|element| element.text().collect::<String>().trim().to_string());
     
     if let Some(title) = &story_title {
         println!("Story Title: {}", title);
     } else {
-        println!("No story title found");
+        panic!("No story title found");
     }
     
     // Extract date
@@ -79,7 +82,7 @@ pub fn scrape_data(url: &str) -> Result<()> {
     if let Some(date_str) = &date {
         println!("Date: {}", date_str);
     } else {
-        println!("No date found");
+        panic!("No date found");
     }
     
     // Extract description from paragraphs
@@ -98,7 +101,7 @@ pub fn scrape_data(url: &str) -> Result<()> {
         let mut description_done = false;
         
         for p in &paragraphs {
-            let text = p.inner_html();
+            let text: String = p.text().collect();
             
             if text.contains("SET LIST") || text.contains("MUSICIANS") {
                 description_done = true;
@@ -121,7 +124,7 @@ pub fn scrape_data(url: &str) -> Result<()> {
         let li_selector = Selector::parse("li").unwrap();
         
         for (i, p) in paragraphs.iter().enumerate() {
-            let text = p.inner_html();
+            let text: String = p.text().collect();
             
             if text.contains("SET LIST") {
                 // Look for the next UL element
@@ -132,14 +135,13 @@ pub fn scrape_data(url: &str) -> Result<()> {
                         if let Some(el) = element.value().as_element() {
                             if el.name() == "ul" {
                                 let ul_element = ElementRef::wrap(element).unwrap();
-                                for (idx, li) in ul_element.select(&li_selector).enumerate() {
-                                    let song_text = li.inner_html().trim()
+                                for li in ul_element.select(&li_selector) {
+                                    let song_text = li.text().collect::<String>().trim()
                                         .trim_start_matches(|c| c == '"' || c == '\'')
                                         .trim_end_matches(|c| c == '"' || c == '\'')
                                         .to_string();
                                     
                                     set_list.push(Song {
-                                        songNumber: idx + 1,
                                         title: song_text,
                                     });
                                 }
@@ -148,61 +150,61 @@ pub fn scrape_data(url: &str) -> Result<()> {
                         }
                         next_element = element.next_sibling();
                     }
-                    }
                 }
             }
+        }
             
-            // Check for MUSICIANS section
-            for (i, p) in paragraphs.iter().enumerate() {
-                if p.inner_html().contains("MUSICIANS") {
-                    // Look for the next UL element
-                    if i + 1 < paragraphs.len() {
-                        // Find the next sibling that is a UL element
-                        let mut next_element = p.next_sibling();
-                        while let Some(element) = next_element {
-                            if let Some(el) = element.value().as_element() {
-                                if el.name() == "ul" {
-                                    let ul_element = ElementRef::wrap(element).unwrap();
-                                    for li in ul_element.select(&li_selector) {
-                                        let musician_text = li.inner_html().trim()
-                                            .trim_start_matches(|c| c == '"' || c == '\'')
-                                            .trim_end_matches(|c| c == '"' || c == '\'')
-                                            .to_string();
+        // Check for MUSICIANS section
+        for (i, p) in paragraphs.iter().enumerate() {
+            if p.text().collect::<String>().contains("MUSICIANS") {
+                // Look for the next UL element
+                if i + 1 < paragraphs.len() {
+                    // Find the next sibling that is a UL element
+                    let mut next_element = p.next_sibling();
+                    while let Some(element) = next_element {
+                        if let Some(el) = element.value().as_element() {
+                            if el.name() == "ul" {
+                                let ul_element = ElementRef::wrap(element).unwrap();
+                                for li in ul_element.select(&li_selector) {
+                                    let musician_text = li.text().collect::<String>().trim()
+                                        .trim_start_matches(|c| c == '"' || c == '\'')
+                                        .trim_end_matches(|c| c == '"' || c == '\'')
+                                        .to_string();
+                                    
+                                    // Parse musician name and instruments
+                                    let parts: Vec<&str> = musician_text.split(':').collect();
+                                    if parts.len() == 2 {
+                                        let name = parts[0].trim().to_string();
+                                        let instruments = parts[1]
+                                            .split(',')
+                                            .map(|s| s.trim().to_string())
+                                            .collect();
                                         
-                                        // Parse musician name and instruments
-                                        let parts: Vec<&str> = musician_text.split(':').collect();
-                                        if parts.len() == 2 {
-                                            let name = parts[0].trim().to_string();
-                                            let instruments = parts[1]
-                                                .split(',')
-                                                .map(|s| s.trim().to_string())
-                                                .collect();
-                                            
-                                            musicians.push(Musician { name, instruments });
-                                        } else {
-                                            musicians.push(Musician {
-                                                name: musician_text,
-                                                instruments: Vec::new(),
-                                            });
-                                        }
+                                        musicians.push(Musician { name, instruments });
+                                    } else {
+                                        musicians.push(Musician {
+                                            name: musician_text,
+                                            instruments: Vec::new(),
+                                        });
                                     }
-                                    break;
                                 }
+                                break;
                             }
-                            next_element = element.next_sibling();
                         }
+                        next_element = element.next_sibling();
                     }
                 }
             }
         }
+    }
     
     if !set_list.is_empty() {
         println!("\nSet list:");
-        for song in &set_list {
-            println!("{}. {}", song.songNumber, song.title);
+        for (i, song) in set_list.iter().enumerate() {
+            println!("{}. {}", i, song.title);
         }
     } else {
-        println!("No set list found");
+        panic!("No set list found");
     }
     
     if !musicians.is_empty() {
@@ -214,7 +216,7 @@ pub fn scrape_data(url: &str) -> Result<()> {
             }
         }
     } else {
-        println!("No musicians list found");
+        panic!("No musicians list found");
     }
     
     // Create JSON structure
@@ -236,6 +238,9 @@ pub fn scrape_data(url: &str) -> Result<()> {
         .collect::<String>()
         .replace(" ", "_")
         .to_lowercase();
+    if sanitized_artist_name.len() == 0 {
+        panic!("artist name is empty")
+    }
     
     let output_file_name = format!("{}_info.json", sanitized_artist_name);
     

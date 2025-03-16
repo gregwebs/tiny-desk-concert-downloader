@@ -12,7 +12,7 @@ URL="$1"
 
 # Scrape the set list
 echo "Scraping set list..."
-npx ts-node scraper.ts "$URL"
+cargo run --bin scraper "$URL"
 
 # Download the video using yt-dlp
 echo "Downloading video..."
