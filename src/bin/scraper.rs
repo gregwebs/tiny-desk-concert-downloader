@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use reqwest::blocking::Client;
-use scraper::{Html, Selector, ElementRef};
+use scraper::{ElementRef, Html, Selector};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -29,85 +29,82 @@ struct ConcertInfo {
 
 pub fn scrape_data(url: &str) -> Result<()> {
     println!("Navigating to {}...", url);
-    
+
     // Create HTTP client
     let client = Client::new();
-    
+
     // Fetch the page
-    let response = client.get(url)
-        .send()
-        .context("Failed to send request")?;
-    
+    let response = client.get(url).send().context("Failed to send request")?;
+
     let html = response.text().context("Failed to get response text")?;
     let document = Html::parse_document(&html);
-    
+
     // Extract the artist name from the title
     let title_selector = Selector::parse("title").unwrap();
-    let title: String = document.select(&title_selector)
+    let title: String = document
+        .select(&title_selector)
         .next()
         .map(|element| element.text().collect())
         .unwrap();
-    
-    let artist_name = title.split(':')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_string();
+
+    let artist_name = title.split(':').next().unwrap_or("").trim().to_string();
 
     if artist_name.len() == 0 {
         panic!("title is empty")
     }
-    
+
     println!("Artist: {}", artist_name);
-    
+
     // Extract story title
     let story_title_selector = Selector::parse(".storytitle h1").unwrap();
-    let story_title = document.select(&story_title_selector)
+    let story_title = document
+        .select(&story_title_selector)
         .next()
         .map(|element| element.text().collect::<String>().trim().to_string());
-    
+
     if let Some(title) = &story_title {
         println!("Story Title: {}", title);
     } else {
         panic!("No story title found");
     }
-    
+
     // Extract date
     let date_selector = Selector::parse(".dateblock time").unwrap();
-    let date = document.select(&date_selector)
+    let date = document
+        .select(&date_selector)
         .next()
         .and_then(|element| element.value().attr("datetime"))
         .map(|date_str| date_str.to_string());
-    
+
     if let Some(date_str) = &date {
         println!("Date: {}", date_str);
     } else {
         panic!("No date found");
     }
-    
+
     // Extract description from paragraphs
     let storytext_selector = Selector::parse("#storytext").unwrap();
     let p_selector = Selector::parse("p").unwrap();
-    
+
     let mut description = None;
     let mut set_list = Vec::new();
     let mut musicians = Vec::new();
-    
+
     if let Some(storytext) = document.select(&storytext_selector).next() {
         let paragraphs: Vec<_> = storytext.select(&p_selector).collect();
-        
+
         // Get description from first paragraphs until SET LIST or MUSICIANS
         let mut desc_text = String::new();
         let mut description_done = false;
-        
+
         for p in &paragraphs {
             let text: String = p.text().collect();
-            
+
             if text.contains("SET LIST") || text.contains("MUSICIANS") {
                 description_done = true;
                 continue;
             }
-            
+
             if !description_done {
                 if !desc_text.is_empty() {
                     desc_text.push_str("\n\n");
@@ -115,17 +112,17 @@ pub fn scrape_data(url: &str) -> Result<()> {
                 desc_text.push_str(&text);
             }
         }
-        
+
         if !desc_text.is_empty() {
             description = Some(desc_text);
         }
-        
+
         // Find SET LIST
         let li_selector = Selector::parse("li").unwrap();
-        
+
         for (i, p) in paragraphs.iter().enumerate() {
             let text: String = p.text().collect();
-            
+
             if text.contains("SET LIST") {
                 // Look for the next UL element
                 if i + 1 < paragraphs.len() {
@@ -136,14 +133,15 @@ pub fn scrape_data(url: &str) -> Result<()> {
                             if el.name() == "ul" {
                                 let ul_element = ElementRef::wrap(element).unwrap();
                                 for li in ul_element.select(&li_selector) {
-                                    let song_text = li.text().collect::<String>().trim()
+                                    let song_text = li
+                                        .text()
+                                        .collect::<String>()
+                                        .trim()
                                         .trim_start_matches(|c| c == '"' || c == '\'')
                                         .trim_end_matches(|c| c == '"' || c == '\'')
                                         .to_string();
-                                    
-                                    set_list.push(Song {
-                                        title: song_text,
-                                    });
+
+                                    set_list.push(Song { title: song_text });
                                 }
                                 break;
                             }
@@ -153,7 +151,7 @@ pub fn scrape_data(url: &str) -> Result<()> {
                 }
             }
         }
-            
+
         // Check for MUSICIANS section
         for (i, p) in paragraphs.iter().enumerate() {
             if p.text().collect::<String>().contains("MUSICIANS") {
@@ -166,11 +164,14 @@ pub fn scrape_data(url: &str) -> Result<()> {
                             if el.name() == "ul" {
                                 let ul_element = ElementRef::wrap(element).unwrap();
                                 for li in ul_element.select(&li_selector) {
-                                    let musician_text = li.text().collect::<String>().trim()
+                                    let musician_text = li
+                                        .text()
+                                        .collect::<String>()
+                                        .trim()
                                         .trim_start_matches(|c| c == '"' || c == '\'')
                                         .trim_end_matches(|c| c == '"' || c == '\'')
                                         .to_string();
-                                    
+
                                     // Parse musician name and instruments
                                     let parts: Vec<&str> = musician_text.split(':').collect();
                                     if parts.len() == 2 {
@@ -179,7 +180,7 @@ pub fn scrape_data(url: &str) -> Result<()> {
                                             .split(',')
                                             .map(|s| s.trim().to_string())
                                             .collect();
-                                        
+
                                         musicians.push(Musician { name, instruments });
                                     } else {
                                         musicians.push(Musician {
@@ -197,7 +198,7 @@ pub fn scrape_data(url: &str) -> Result<()> {
             }
         }
     }
-    
+
     if !set_list.is_empty() {
         println!("\nSet list:");
         for (i, song) in set_list.iter().enumerate() {
@@ -206,7 +207,7 @@ pub fn scrape_data(url: &str) -> Result<()> {
     } else {
         panic!("No set list found");
     }
-    
+
     if !musicians.is_empty() {
         println!("\nMusicians:");
         for (idx, musician) in musicians.iter().enumerate() {
@@ -218,7 +219,7 @@ pub fn scrape_data(url: &str) -> Result<()> {
     } else {
         panic!("No musicians list found");
     }
-    
+
     // Create JSON structure
     let concert_info = ConcertInfo {
         artist: artist_name.clone(),
@@ -230,7 +231,7 @@ pub fn scrape_data(url: &str) -> Result<()> {
         setList: set_list,
         musicians,
     };
-    
+
     // Create output filename based on artist name
     let sanitized_artist_name = artist_name
         .chars()
@@ -241,33 +242,32 @@ pub fn scrape_data(url: &str) -> Result<()> {
     if sanitized_artist_name.len() == 0 {
         panic!("artist name is empty")
     }
-    
+
     let output_file_name = format!("{}_info.json", sanitized_artist_name);
-    
+
     // Write to file as JSON
-    let json = serde_json::to_string_pretty(&concert_info)
-        .context("Failed to serialize concert info")?;
-    
-    fs::write(&output_file_name, json)
-        .context("Failed to write JSON file")?;
-    
+    let json =
+        serde_json::to_string_pretty(&concert_info).context("Failed to serialize concert info")?;
+
+    fs::write(&output_file_name, json).context("Failed to write JSON file")?;
+
     println!("\nInformation saved to {}", output_file_name);
-    
+
     Ok(())
 }
 
 fn main() -> Result<()> {
     // Get URL from command line arguments
     let args: Vec<String> = std::env::args().collect();
-    
+
     if args.len() < 2 {
         eprintln!("Please provide a URL as an argument");
         eprintln!("Usage: cargo run --bin scraper <URL>");
         std::process::exit(1);
     }
-    
+
     let url = &args[1];
     scrape_data(url)?;
-    
+
     Ok(())
 }
